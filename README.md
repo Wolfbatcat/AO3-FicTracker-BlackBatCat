@@ -1,10 +1,6 @@
 # AO3 FicTracker
 
-A userscript that enhances your Archive of Our Own (AO3) reading experience by adding powerful tracking features. Track your favorite, finished, to-read, and disliked fanfics with sync across devices.
-
-## ⚠️ BlackBatCat's Custom Version
-
-This is a customized fork of [infiniMotis's AO3 FicTracker](https://github.com/infiniMotis/AO3-FicTracker) with my personalized modifications. See [Changes from Original](#changes-from-original) below for details.
+This is a customized fork of [infiniMotis's AO3 FicTracker](https://github.com/infiniMotis/AO3-FicTracker) with my personalized modifications.
 
 > **Note:** This version does not auto-update from Greasy Fork. To use the official version with auto-updates, install from the [original repository](https://greasyfork.org/en/scripts/513435-ao3-fictracker).
 
