@@ -144,7 +144,8 @@
         collapseAndHideOnBookmarks: false,
         displayMyNotesButton: false,
         displayOnPageSorting: false,
-        enableMarkAsReadButton: true
+        enableMarkAsReadButton: true,
+        kudosStorageKey: 'FT_kudosGiven'
     };
 
     // Toggle debug info
@@ -812,6 +813,8 @@
             this.storageManager = new StorageManager();
             // Sync all configured status storage keys dynamically
             this.syncedKeys = settings.statuses.map(s => s.storageKey);
+            // Add kudos storage key to synced keys
+            this.syncedKeys.push(settings.kudosStorageKey);
             this.PENDING_CHANGES_KEY = 'FT_pendingChanges';
             this.LAST_SYNC_KEY = 'FT_lastSync';
 
@@ -843,7 +846,16 @@
                 }));
             }
 
+            // Initialize kudos storage if not present (ensures it syncs even if empty)
+            if (!this.storageManager.getItem(settings.kudosStorageKey)) {
+                this.storageManager.setItem(settings.kudosStorageKey, '');
+                DEBUG && console.log('[FicTracker] Initialized empty kudos storage');
+                // Queue a 'set' operation to ensure the key exists on the server
+                this.addPendingStatusChange('set', settings.kudosStorageKey, '');
+            }
+
             DEBUG && console.log('[FicTracker] Pending changes storage initialized');
+            DEBUG && console.log('[FicTracker] Synced keys:', this.syncedKeys);
 
             // Set up event listeners for (dis)connecting to network, tab focus change
             window.addEventListener('online', this.handleOnline);
@@ -1142,6 +1154,7 @@
 
             const pendingChanges = this.getPendingChanges();
             DEBUG && console.log('[FicTracker] Performing sync, pending operations:', pendingChanges.operations.length, 'notes:', pendingChanges.notes.length);
+            DEBUG && pendingChanges.operations.length > 0 && console.log('[FicTracker] Operations to sync:', pendingChanges.operations);
 
             try {
                 let syncData = {
@@ -1230,7 +1243,9 @@
                 // If the server response contains the key, update local storage with its value
                 if (serverData.hasOwnProperty(key)) {
                     this.storageManager.setItem(key, serverData[key]);
-                    DEBUG && console.log(`[FicTracker] Synced key "${key}" updated from server data.`);
+                    DEBUG && console.log(`[FicTracker] Synced key "${key}" updated from server data:`, serverData[key]);
+                } else {
+                    DEBUG && console.warn(`[FicTracker] Server data missing expected key "${key}"`);
                 }
             }
         }
@@ -1483,6 +1498,10 @@
             }
 
             this.setupClickListeners();
+            
+            // Initialize kudos tracking
+            const kudosManager = new KudosManager(this.storageManager, this.remoteSyncManager);
+            kudosManager.init();
         }
 
         // Set up click listeners for each action button
@@ -1625,6 +1644,85 @@
         }
 
 
+    }
+
+    // Class for managing kudos button hiding and sync
+    class KudosManager {
+        constructor(storageManager, remoteSyncManager = null) {
+            this.storageManager = storageManager;
+            this.remoteSyncManager = remoteSyncManager;
+            this.storageKey = settings.kudosStorageKey;
+        }
+
+        // Get work ID from the kudos form
+        getWorkIdFromForm() {
+            const workIdInput = document.getElementById('kudo_commentable_id');
+            return workIdInput ? workIdInput.value : null;
+        }
+
+        // Get the kudos button element
+        getKudosButton() {
+            return document.getElementById('kudo_submit');
+        }
+
+        // Check if user has already given kudos to this work
+        hasGivenKudos(workId) {
+            const kudosGiven = this.storageManager.getIdsFromCategory(this.storageKey);
+            return kudosGiven.includes(workId);
+        }
+
+        // Record that kudos was given and hide the button
+        recordKudos(workId, button) {
+            // Add to local storage
+            this.storageManager.addIdToCategory(this.storageKey, workId);
+            DEBUG && console.info('[FicTracker] Kudos recorded locally for work:', workId);
+            DEBUG && console.info('[FicTracker] Current kudos storage:', this.storageManager.getItem(this.storageKey));
+
+            // Queue sync operation if remote sync is enabled
+            if (this.remoteSyncManager) {
+                this.remoteSyncManager.addPendingStatusChange('add', this.storageKey, workId);
+                DEBUG && console.info('[FicTracker] Kudos sync operation queued for work:', workId);
+            } else {
+                DEBUG && console.info('[FicTracker] Remote sync not enabled, kudos stored locally only');
+            }
+
+            // Hide the button
+            button.style.display = 'none';
+        }
+
+        // Initialize kudos tracking on the current page
+        init() {
+            const kudosButton = this.getKudosButton();
+            const workId = this.getWorkIdFromForm();
+
+            // Early return if kudos button doesn't exist
+            if (!kudosButton) {
+                DEBUG && console.info('[FicTracker] No kudos button found on this page');
+                return;
+            }
+
+            // Early return if work ID can't be determined
+            if (!workId) {
+                DEBUG && console.warn('[FicTracker] Could not determine work ID for kudos tracking');
+                return;
+            }
+
+            // Check if kudos already given
+            if (this.hasGivenKudos(workId)) {
+                // Hide button immediately
+                kudosButton.style.display = 'none';
+                DEBUG && console.info('[FicTracker] Kudos already given, button hidden for work:', workId);
+            } else {
+                // Attach click listener to record kudos when given
+                kudosButton.addEventListener('click', () => {
+                    // Small delay to ensure AO3's kudos form processes first
+                    setTimeout(() => {
+                        this.recordKudos(workId, kudosButton);
+                    }, 100);
+                });
+                DEBUG && console.info('[FicTracker] Kudos tracking initialized for work:', workId);
+            }
+        }
     }
 
     // Class for handling features on works list page
@@ -2993,6 +3091,7 @@
             this.initStyles();
             this.addDropdownOptions();
             this.setupURLHandlers();
+            this.setupCrossTabKudosSync();
 
             // Only initialize storages on global scope if My Notes manager enabled
             if(settings.displayMyNotesButton) {
@@ -3155,6 +3254,30 @@
             //this.userNotesManager.setupNoteHandlers(container, false, true);
         }
 
+
+        // Setup cross-tab kudos synchronization
+        setupCrossTabKudosSync() {
+            // Listen for localStorage changes from other tabs/windows
+            window.addEventListener('storage', (e) => {
+                // Only react to kudos storage changes
+                if (e.key === settings.kudosStorageKey) {
+                    const kudosButton = document.getElementById('kudo_submit');
+                    const workIdInput = document.getElementById('kudo_commentable_id');
+                    
+                    // If we're on a work page with a kudos button
+                    if (kudosButton && workIdInput) {
+                        const workId = workIdInput.value;
+                        const kudosGiven = e.newValue ? e.newValue.split(',').filter(id => id) : [];
+                        
+                        // Hide button if kudos was given in another tab
+                        if (kudosGiven.includes(workId)) {
+                            kudosButton.style.display = 'none';
+                            DEBUG && console.info('[FicTracker] Kudos button hidden due to cross-tab update');
+                        }
+                    }
+                }
+            });
+        }
 
         // Setup URL handlers for different pages
         setupURLHandlers() {
