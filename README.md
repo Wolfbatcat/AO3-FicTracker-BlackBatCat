@@ -36,6 +36,10 @@ New feature to help track reading progress in multi-chapter works:
 - Automatically prepends `Last Read: Ch. X` to your custom note for that fic
 - Updates the chapter number each time you click it
 
+### ⭐ Kudos Button Hiding (Cloud Sync)
+New feature: When you give kudos to a work, AO3 FicTracker will automatically hide the kudos button on all chapters and work pages for that fic.
+- This status is tracked and synced across all devices using the Google Sheets Cloud Storage integration.
+
 ### ⚙️ Changed Default Settings
 Different defaults matching my own preferences:
 - **My Notes Button**: Disabled by default (`displayMyNotesButton: false`)
@@ -46,3 +50,7 @@ Different defaults matching my own preferences:
 ### 🐛 Bug Fixes
 - Fixed case-sensitive tag comparison bug that prevented removing tags from dropdown menus when AO3 normalized tag casing
 - Fixed issue where blurbs would not inherit original box shadow and border properties when Border Size set to 0
+
+
+
+
