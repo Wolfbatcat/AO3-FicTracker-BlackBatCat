@@ -9,7 +9,7 @@ This is a customized fork of [infiniMotis's AO3 FicTracker](https://github.com/i
 This custom version includes the following modifications from the [original AO3 FicTracker](https://github.com/infiniMotis/AO3-FicTracker):
 
 ### 📚 Renamed Status Categories
-Status categories have been renamed and reordered to better fit reading workflow:
+Status categories have been renamed and reordered to better fit my workflow:
 - **"Favorite"** → **"Reading"** 
   - Label: "My Current Fanfics"
   - Color: Rose pink (`#eb6f92`)
@@ -38,8 +38,8 @@ New feature: When you give kudos to a work, AO3 FicTracker will automatically hi
 
 ### ⚙️ Changed Default Settings
 Different defaults matching my own preferences:
-- **My Notes Button**: Disabled by default
-- **On-Page Sorting**: Disabled by default
+- **My Notes Button**: Disabled by default; can be re-enabled in Preferences
+- **On-Page Sorting**: Disabled by default; can be re-enabled in Preferences
 - **Hide Default Subscribe Button**: New setting, enabled by default
 
 ### 🐛 Bug Fixes
