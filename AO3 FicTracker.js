@@ -411,7 +411,8 @@
 
     // Utility functions for chapter detection
     function isChapterPage() {
-        return /\/works\/\d+\/chapters\/\d+/.test(window.location.pathname);
+        // Match both /works/123/chapters/456 and direct /chapters/456 URLs
+        return /\/chapters\/\d+/.test(window.location.pathname);
     }
 
     function getCurrentChapterNumber() {
