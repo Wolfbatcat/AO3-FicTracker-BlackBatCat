@@ -8,6 +8,8 @@ This is a customized fork of [infiniMotis's AO3 FicTracker](https://github.com/i
 
 This custom version includes the following modifications from the [original AO3 FicTracker](https://github.com/infiniMotis/AO3-FicTracker):
 
+> **Important🚨**: For status highlighting and collapse/hide behavior to work correctly, update statuses using FicTracker controls only (the **Change Status** menu and FicTracker work-page buttons). Changes made through AO3 **Edit Bookmark** are not tracked by FicTracker storage.
+
 ### 📚 Renamed Status Categories
 Status categories have been renamed and reordered to better fit my workflow:
 - **"Favorite"** → **"Reading"** 
