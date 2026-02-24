@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AO3 FicTracker - BlackBatCat's Version
 // @author       infiniMotis, BlackBatCat
-// @version      1.6.6.3-bbc.1
+// @version      1.6.6.4.1
 // @namespace    https://github.com/Wolfbatcat/AO3-FicTracker
 // @description  Customized fork with chapter tracking, kudos button hiding, and Rose Piné-inspired theme. Tracks favorite, finished, to-read and disliked fanfics on AO3 with sync across devices.
 // @license      GNU GPLv3
@@ -156,6 +156,85 @@
     // Utility function for status settings retrieval
     function getStatusSettingsByStorageKey(storageKey) {
         return settings.statuses.find(status => status.storageKey === storageKey);
+    }
+
+    const RESERVED_SYNC_KEYS = new Set(['FT_userNotes', 'FT_statusesConfig', 'FT_kudosGiven']);
+
+    function toTitleCaseWords(text) {
+        return text
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    }
+
+    function inferTagFromStorageKey(storageKey) {
+        return toTitleCaseWords(
+            storageKey
+                .replace(/^FT_/, '')
+                .replace(/^custom_\d+_?/, '')
+                .replace(/^custom_/, '')
+                .replace(/_/g, ' ')
+                .trim() || 'Custom Tag'
+        );
+    }
+
+    function createFallbackStatus(storageKey) {
+        const tag = inferTagFromStorageKey(storageKey);
+        return {
+            tag,
+            dropdownLabel: `My ${tag} Fanfics`,
+            positiveLabel: `➕ Add ${tag}`,
+            negativeLabel: `🧹 Remove ${tag}`,
+            selector: `${storageKey}_btn`,
+            storageKey,
+            enabled: true,
+            collapse: false,
+            displayInDropdown: true,
+            highlightColor: '#888888',
+            borderSize: 2,
+            opacity: 1,
+            borderOpacity: 255,
+            hide: false
+        };
+    }
+
+    function mergeStatusesByStorageKey(baseStatuses, incomingStatuses) {
+        const merged = [];
+        const byKey = new Map();
+
+        for (const status of (baseStatuses || [])) {
+            if (!status || !status.storageKey) continue;
+            byKey.set(status.storageKey, status);
+            merged.push(status);
+        }
+
+        for (const incoming of (incomingStatuses || [])) {
+            if (!incoming || !incoming.storageKey) continue;
+            const existing = byKey.get(incoming.storageKey);
+            if (existing) {
+                Object.assign(existing, incoming);
+            } else {
+                byKey.set(incoming.storageKey, incoming);
+                merged.push(incoming);
+            }
+        }
+
+        return merged;
+    }
+
+    function inferStatusesFromStatusData(statusData, existingStatuses) {
+        const existingKeys = new Set((existingStatuses || []).map(s => s.storageKey));
+        const inferred = [];
+
+        for (const key of Object.keys(statusData || {})) {
+            if (existingKeys.has(key)) continue;
+            if (!key || !key.startsWith('FT_')) continue;
+            if (RESERVED_SYNC_KEYS.has(key)) continue;
+            inferred.push(createFallbackStatus(key));
+        }
+
+        return inferred;
     }
 
     // Utility function to check if current page is users own bookmarks page
@@ -814,10 +893,9 @@
     class RemoteStorageSyncManager {
         constructor() {
             this.storageManager = new StorageManager();
-            // Sync all configured status storage keys dynamically
-            this.syncedKeys = settings.statuses.map(s => s.storageKey);
-            // Add kudos storage key to synced keys
-            this.syncedKeys.push(settings.kudosStorageKey);
+            this.STATUS_CONFIG_KEY = 'FT_statusesConfig';
+            this.LAST_SYNCED_STATUS_CONFIG_KEY = 'FT_lastSyncedStatusesConfig';
+            this.rebuildSyncedKeys();
             this.PENDING_CHANGES_KEY = 'FT_pendingChanges';
             this.LAST_SYNC_KEY = 'FT_lastSync';
 
@@ -839,6 +917,56 @@
             DEBUG && console.log('[FicTracker] Initialized RemoteStorageSyncManager with syncInterval:', this.syncInterval / 1000, 's');
         }
 
+        rebuildSyncedKeys() {
+            // Sync all configured status storage keys dynamically
+            this.syncedKeys = settings.statuses.map(s => s.storageKey);
+            // Sync custom status definitions and kudos state as well
+            this.syncedKeys.push(this.STATUS_CONFIG_KEY);
+            this.syncedKeys.push(settings.kudosStorageKey);
+        }
+
+        applySyncedStatusesConfig(configRaw) {
+            try {
+                if (!configRaw) return false;
+
+                const parsedStatuses = JSON.parse(configRaw);
+                if (!Array.isArray(parsedStatuses)) return false;
+
+                const validStatuses = parsedStatuses.filter(s => s && typeof s.storageKey === 'string' && typeof s.tag === 'string');
+                if (validStatuses.length === 0) return false;
+
+                const existingByStorageKey = new Map((settings.statuses || []).map(status => [status.storageKey, status]));
+                const syncedStatuses = validStatuses.map(status => {
+                    const existing = existingByStorageKey.get(status.storageKey) || {};
+                    return { ...existing, ...status };
+                });
+                settings.statuses = syncedStatuses;
+
+                const currentSettings = JSON.parse(localStorage.getItem('FT_settings') || '{}');
+                currentSettings.statuses = syncedStatuses;
+                localStorage.setItem('FT_settings', JSON.stringify(currentSettings));
+                localStorage.setItem(this.STATUS_CONFIG_KEY, JSON.stringify(syncedStatuses));
+
+                this.rebuildSyncedKeys();
+                DEBUG && console.log('[FicTracker] Applied synced status configuration. Total statuses:', syncedStatuses.length);
+                return true;
+            } catch (error) {
+                DEBUG && console.warn('[FicTracker] Failed to apply synced status configuration:', error);
+                return false;
+            }
+        }
+
+        syncStatusesConfigIfNeeded() {
+            const localConfig = localStorage.getItem(this.STATUS_CONFIG_KEY) || JSON.stringify(settings.statuses || []);
+            this.storageManager.setItem(this.STATUS_CONFIG_KEY, localConfig);
+
+            const lastSyncedConfig = this.storageManager.getItem(this.LAST_SYNCED_STATUS_CONFIG_KEY) || '';
+            if (localConfig !== lastSyncedConfig) {
+                this.addPendingStatusChange('set', this.STATUS_CONFIG_KEY, localConfig);
+                DEBUG && console.log('[FicTracker] Queued status config sync update');
+            }
+        }
+
         // Initialize sync system
         init() {
             // Initialize pending changes storage if not present
@@ -849,12 +977,8 @@
                 }));
             }
 
-            // Initialize kudos storage if not present (ensures it syncs even if empty)
-            if (!this.storageManager.getItem(settings.kudosStorageKey)) {
-                this.storageManager.setItem(settings.kudosStorageKey, '');
-                DEBUG && console.log('[FicTracker] Initialized empty kudos storage');
-                // Queue a 'set' operation to ensure the key exists on the server
-                this.addPendingStatusChange('set', settings.kudosStorageKey, '');
+            if (!this.storageManager.getItem(this.STATUS_CONFIG_KEY)) {
+                this.storageManager.setItem(this.STATUS_CONFIG_KEY, JSON.stringify(settings.statuses || []));
             }
 
             DEBUG && console.log('[FicTracker] Pending changes storage initialized');
@@ -1059,7 +1183,12 @@
             };
 
             DEBUG && console.log(`[FicTracker] Queuing pending status change: ${action} ${statusKey} → ${fanficId}`);
-            this.optimizeOperations(pendingChanges.operations, newOperation);
+            const shouldEnqueue = this.optimizeOperations(pendingChanges.operations, newOperation);
+
+            if (!shouldEnqueue) {
+                this.savePendingChanges(pendingChanges);
+                return;
+            }
 
             pendingChanges.operations.push(newOperation);
             this.savePendingChanges(pendingChanges);
@@ -1105,10 +1234,12 @@
                     } else {
                         // Same action - remove duplicate
                         DEBUG && console.log(`[FicTracker] Removed duplicate operation for ${key}:${value}`);
-                        return; // Don't add the new operation either
+                        return false; // Don't add the new operation either
                     }
                 }
             }
+
+            return true;
         }
 
         // Get pending changes from localStorage
@@ -1151,11 +1282,20 @@
                 return;
             }
 
+            this.syncStatusesConfigIfNeeded();
+
             // update widget appropriately
             this.isSyncing = true;
             this.updateSyncWidget('syncing');
 
             const pendingChanges = this.getPendingChanges();
+            const statusConfigSetOps = (pendingChanges.operations || []).filter(
+                op => op && op.action === 'set' && op.key === this.STATUS_CONFIG_KEY
+            );
+            const attemptedStatusConfigSync = statusConfigSetOps.length > 0;
+            const attemptedStatusConfigValue = attemptedStatusConfigSync
+                ? String(statusConfigSetOps[statusConfigSetOps.length - 1].value || '')
+                : '';
             DEBUG && console.log('[FicTracker] Performing sync, pending operations:', pendingChanges.operations.length, 'notes:', pendingChanges.notes.length);
             DEBUG && pendingChanges.operations.length > 0 && console.log('[FicTracker] Operations to sync:', pendingChanges.operations);
 
@@ -1169,9 +1309,27 @@
 
                 const response = await this.sendSyncRequest(syncData);
 
-                if (response.success) {
+                const syncSucceeded = response?.success === true || response?.status === 'success';
+
+                if (syncSucceeded) {
+                    const remoteStatusConfig = response?.status_data?.[this.STATUS_CONFIG_KEY];
+                    const statusConfigConfirmed = !attemptedStatusConfigSync || remoteStatusConfig === attemptedStatusConfigValue;
+
+                    if (attemptedStatusConfigSync && !statusConfigConfirmed) {
+                        DEBUG && console.warn('[FicTracker] FT_statusesConfig sync not confirmed by server response. Keeping local config and re-queuing update.');
+                        response.status_data = response.status_data || {};
+                        response.status_data[this.STATUS_CONFIG_KEY] = attemptedStatusConfigValue;
+                    }
+
                     // Update local storage with server data
                     this.updateLocalStorage(response.status_data);
+
+                    if (statusConfigConfirmed) {
+                        const syncedConfig = this.storageManager.getItem(this.STATUS_CONFIG_KEY);
+                        if (syncedConfig) {
+                            this.storageManager.setItem(this.LAST_SYNCED_STATUS_CONFIG_KEY, syncedConfig);
+                        }
+                    }
 
                     this.timeUntilNextSync = this.syncInterval / 1000;
                     this.isSyncing = false;
@@ -1184,6 +1342,10 @@
 
                     // Clear pending changes
                     this.clearPendingChanges();
+
+                    if (attemptedStatusConfigSync && !statusConfigConfirmed) {
+                        this.addPendingStatusChange('set', this.STATUS_CONFIG_KEY, attemptedStatusConfigValue);
+                    }
 
                     // Update last sync timestamp
                     this.storageManager.setItem(this.LAST_SYNC_KEY, Date.now().toString());
@@ -1241,12 +1403,35 @@
 
         // Update local storage with server data
         updateLocalStorage(serverData) {
+            const safeServerData = serverData || {};
+
+            // Apply status configuration first so syncedKeys include remote custom keys
+            let configApplied = false;
+            if (Object.prototype.hasOwnProperty.call(safeServerData, this.STATUS_CONFIG_KEY)) {
+                const configValue = safeServerData[this.STATUS_CONFIG_KEY] || '';
+                this.storageManager.setItem(this.STATUS_CONFIG_KEY, configValue);
+                configApplied = this.applySyncedStatusesConfig(configValue);
+            }
+
+            if (!configApplied) {
+                const inferredStatuses = inferStatusesFromStatusData(safeServerData, settings.statuses);
+                if (inferredStatuses.length > 0) {
+                    settings.statuses = mergeStatusesByStorageKey(settings.statuses, inferredStatuses);
+                    const currentSettings = JSON.parse(localStorage.getItem('FT_settings') || '{}');
+                    currentSettings.statuses = settings.statuses;
+                    localStorage.setItem('FT_settings', JSON.stringify(currentSettings));
+                    localStorage.setItem(this.STATUS_CONFIG_KEY, JSON.stringify(settings.statuses));
+                    this.rebuildSyncedKeys();
+                    DEBUG && console.log('[FicTracker] Inferred custom statuses from synced keys:', inferredStatuses.map(s => s.storageKey));
+                }
+            }
+
             // Iterate through the list of keys that are eligible for syncing
             for (const key of this.syncedKeys) {
                 // If the server response contains the key, update local storage with its value
-                if (serverData.hasOwnProperty(key)) {
-                    this.storageManager.setItem(key, serverData[key]);
-                    DEBUG && console.log(`[FicTracker] Synced key "${key}" updated from server data:`, serverData[key]);
+                if (Object.prototype.hasOwnProperty.call(safeServerData, key)) {
+                    this.storageManager.setItem(key, safeServerData[key]);
+                    DEBUG && console.log(`[FicTracker] Synced key "${key}" updated from server data:`, safeServerData[key]);
                 } else {
                     DEBUG && console.warn(`[FicTracker] Server data missing expected key "${key}"`);
                 }
@@ -2610,6 +2795,7 @@
 
                 saveSettings() {
                     localStorage.setItem('FT_settings', JSON.stringify(this.ficTrackerSettings));
+                    localStorage.setItem('FT_statusesConfig', JSON.stringify(this.ficTrackerSettings.statuses || []));
                     DEBUG && console.log('[FicTracker] Settings saved.');
                 },
 
@@ -2635,6 +2821,8 @@
                     this.ficTrackerSettings.syncDBInitialized = false;
                     this.ficTrackerSettings.syncEnabled = false;
                     localStorage.removeItem('FT_lastSync');
+                    localStorage.removeItem('FT_pendingChanges');
+                    localStorage.removeItem('FT_lastSyncedStatusesConfig');
                     this.saveSettings();
 
                     // Clear any existing status messages
@@ -2653,6 +2841,9 @@
                     this.sheetConnectionStatus = {};
 
                     try {
+                        // Persist any in-panel status edits before syncing
+                        this.saveSettings();
+
                         // Attempt to perform the sync and update the last successful sync timestamp
                         await this.performSync();
                         this.updateLastSyncTime();
@@ -2790,22 +2981,190 @@
                     this.sheetConnectionStatus = {};
                     this.syncFeedback = {};
 
-                    // Gather current local storage data to be uploaded to Google Sheets
-                    const initData = {
-                        FT_userNotes: JSON.stringify(JSON.parse(localStorage.getItem('FT_userNotes') || '{}')),
-                    };
-                    try {
-                        const allStatuses = this.ficTrackerSettings.statuses;
-                        for (const s of allStatuses) {
-                            initData[s.storageKey] = localStorage.getItem(s.storageKey) || '';
+                    const STATUS_CONFIG_KEY = 'FT_statusesConfig';
+                    const syncedKeys = this.ficTrackerSettings.statuses.map(s => s.storageKey);
+                    syncedKeys.push(STATUS_CONFIG_KEY);
+                    syncedKeys.push(this.ficTrackerSettings.kudosStorageKey);
+
+                    const hasMeaningfulLocalData = () => {
+                        let hasStatusData = false;
+                        for (const key of syncedKeys) {
+                            if ((localStorage.getItem(key) || '').trim().length > 0) {
+                                hasStatusData = true;
+                                break;
+                            }
                         }
-                    } catch (e) {
-                        DEBUG && console.warn('[FicTracker] Failed to build initData for dynamic statuses:', e);
-                    }
 
-                    DEBUG && console.log('[FicTracker] Initializing Google Sheets with data:', initData);
+                        let hasNotes = false;
+                        try {
+                            const notesObj = JSON.parse(localStorage.getItem('FT_userNotes') || '{}');
+                            hasNotes = Object.keys(notesObj).length > 0;
+                        } catch (e) {
+                            hasNotes = false;
+                        }
 
-                    // Send initialization request to Google Sheets endpoint
+                        return hasStatusData || hasNotes;
+                    };
+
+                    const updateLocalFromServer = (responseData) => {
+                        const statusData = responseData?.status_data || {};
+
+                        let configApplied = false;
+                        if (Object.prototype.hasOwnProperty.call(statusData, STATUS_CONFIG_KEY)) {
+                            try {
+                                const parsedStatuses = JSON.parse(statusData[STATUS_CONFIG_KEY] || '[]');
+                                const validStatuses = Array.isArray(parsedStatuses)
+                                    ? parsedStatuses.filter(s => s && typeof s.storageKey === 'string' && typeof s.tag === 'string')
+                                    : [];
+
+                                if (validStatuses.length > 0) {
+                                    const existingByStorageKey = new Map((this.ficTrackerSettings.statuses || []).map(status => [status.storageKey, status]));
+                                    const syncedStatuses = validStatuses.map(status => {
+                                        const existing = existingByStorageKey.get(status.storageKey) || {};
+                                        return { ...existing, ...status };
+                                    });
+
+                                    this.ficTrackerSettings.statuses = syncedStatuses;
+                                    settings.statuses = syncedStatuses;
+                                    localStorage.setItem('FT_settings', JSON.stringify(this.ficTrackerSettings));
+                                    localStorage.setItem(STATUS_CONFIG_KEY, JSON.stringify(syncedStatuses));
+                                    DEBUG && console.log('[FicTracker] Initialize pull applied remote status config. Replaced statuses count:', syncedStatuses.length);
+                                    configApplied = true;
+                                }
+                            } catch (e) {
+                                DEBUG && console.warn('[FicTracker] Failed to apply status config from remote initialize pull:', e);
+                            }
+                        }
+
+                        if (!configApplied) {
+                            const inferredStatuses = inferStatusesFromStatusData(statusData, this.ficTrackerSettings.statuses);
+                            if (inferredStatuses.length > 0) {
+                                const mergedStatuses = mergeStatusesByStorageKey(this.ficTrackerSettings.statuses, inferredStatuses);
+                                this.ficTrackerSettings.statuses = mergedStatuses;
+                                settings.statuses = mergedStatuses;
+                                localStorage.setItem('FT_settings', JSON.stringify(this.ficTrackerSettings));
+                                localStorage.setItem(STATUS_CONFIG_KEY, JSON.stringify(mergedStatuses));
+                                DEBUG && console.log('[FicTracker] Inferred status config from server keys during init:', inferredStatuses.map(s => s.storageKey));
+                            }
+                        }
+
+                        const effectiveSyncedKeys = this.ficTrackerSettings.statuses.map(s => s.storageKey);
+                        effectiveSyncedKeys.push(STATUS_CONFIG_KEY);
+                        effectiveSyncedKeys.push(this.ficTrackerSettings.kudosStorageKey);
+
+                        for (const key of effectiveSyncedKeys) {
+                            if (Object.prototype.hasOwnProperty.call(statusData, key)) {
+                                localStorage.setItem(key, statusData[key] || '');
+                            }
+                        }
+
+                        if (responseData && Object.prototype.hasOwnProperty.call(responseData, 'notes')) {
+                            localStorage.setItem('FT_userNotes', JSON.stringify(responseData.notes || {}));
+                        }
+                    };
+
+                    const completeInitialization = (message) => {
+                        this.sheetConnectionStatus = {
+                            success: true,
+                            message: message || 'Google Sheet initialized successfully!'
+                        };
+                        this.ficTrackerSettings.syncDBInitialized = true;
+
+                        if (this.ficTrackerSettings.syncEnabled && !this.remoteSyncManager) {
+                            this.initRemoteSyncManager();
+                        }
+
+                        localStorage.setItem('FT_lastSync', Date.now().toString());
+                        this.saveSettings();
+                        this.updateLastSyncTime();
+
+                        setTimeout(() => {
+                            if (this.sheetConnectionStatus && this.sheetConnectionStatus.success) {
+                                this.sheetConnectionStatus = {};
+                            }
+                        }, 7000);
+                    };
+
+                    const sendInitializeRequest = () => {
+                        // Safety guard: don't initialize from an empty browser if we couldn't verify remote DB state.
+                        if (!hasMeaningfulLocalData()) {
+                            this.loadingStates.initialize = false;
+                            this.sheetConnectionStatus = {
+                                success: false,
+                                message: 'Initialization canceled to prevent overwrite. This browser has no local data yet; use Sync Now to pull existing data first.'
+                            };
+                            return;
+                        }
+
+                        // Gather current local storage data to be uploaded to Google Sheets
+                        const initData = {
+                            FT_userNotes: JSON.stringify(JSON.parse(localStorage.getItem('FT_userNotes') || '{}')),
+                            [STATUS_CONFIG_KEY]: localStorage.getItem(STATUS_CONFIG_KEY) || JSON.stringify(this.ficTrackerSettings.statuses || []),
+                            [this.ficTrackerSettings.kudosStorageKey]: localStorage.getItem(this.ficTrackerSettings.kudosStorageKey) || ''
+                        };
+                        try {
+                            const allStatuses = this.ficTrackerSettings.statuses;
+                            for (const s of allStatuses) {
+                                initData[s.storageKey] = localStorage.getItem(s.storageKey) || '';
+                            }
+                        } catch (e) {
+                            DEBUG && console.warn('[FicTracker] Failed to build initData for dynamic statuses:', e);
+                        }
+
+                        DEBUG && console.log('[FicTracker] Initializing Google Sheets with data:', initData);
+
+                        // Send initialization request to Google Sheets endpoint
+                        GM_xmlhttpRequest({
+                            method: 'POST',
+                            url: url,
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            data: JSON.stringify({
+                                action: 'initialize',
+                                initData
+                            }),
+                            onload: (response) => {
+                                this.loadingStates.initialize = false;
+
+                                try {
+                                    // Parse and handle successful initialization response
+                                    const data = JSON.parse(response.responseText);
+                                    DEBUG && console.log('[FicTracker] DB Initialization response data:', data);
+
+                                    if (data.status === 'success') {
+                                        completeInitialization(data.data?.message || 'Google Sheet initialized successfully!');
+                                    } else {
+                                        // Handle error response from server
+                                        this.sheetConnectionStatus = {
+                                            success: false,
+                                            message: data.message || 'Initialization failed'
+                                        };
+                                    }
+                                    // Catch JSON parsing errors and log them
+                                } catch (e) {
+                                    DEBUG && console.error('[FicTracker] Invalid JSON response during initialization:', response.responseText);
+
+                                    this.sheetConnectionStatus = {
+                                        success: false,
+                                        message: 'Invalid response from server'
+                                    };
+                                }
+                            },
+                            // Handle connection errors like timeouts or offline state
+                            onerror: (err) => {
+                                DEBUG && console.error('[FicTracker] Network error during initialization:', err);
+
+                                this.loadingStates.initialize = false;
+                                this.sheetConnectionStatus = {
+                                    success: false,
+                                    message: 'Network error - check your connection'
+                                };
+                            }
+                        });
+                    };
+
+                    // First try pulling existing remote data. If present, connect without re-initializing.
                     GM_xmlhttpRequest({
                         method: 'POST',
                         url: url,
@@ -2813,66 +3172,35 @@
                             'Content-Type': 'application/json'
                         },
                         data: JSON.stringify({
-                            action: 'initialize',
-                            initData
+                            action: 'sync',
+                            queue: {
+                                operations: [],
+                                notes: []
+                            }
                         }),
                         onload: (response) => {
-                            this.loadingStates.initialize = false;
-
                             try {
-                                // Parse and handle successful initialization response
                                 const data = JSON.parse(response.responseText);
-                                DEBUG && console.log('[FicTracker] DB Initialization response data:', data);
+                                DEBUG && console.log('[FicTracker] Pre-initialize sync probe response:', data);
 
-                                if (data.status === 'success') {
-                                    // Store sync initialization status, timestamp, and update UI
-                                    this.sheetConnectionStatus = {
-                                        success: true,
-                                        message: data.data?.message || 'Google Sheet initialized successfully!'
-                                    };
-                                    this.ficTrackerSettings.syncDBInitialized = true;
+                                const probeSucceeded = data?.success === true || data?.status === 'success';
+                                const hasRemotePayload = !!data?.status_data || Object.prototype.hasOwnProperty.call(data || {}, 'notes');
 
-                                    if (this.ficTrackerSettings.syncEnabled && !this.remoteSyncManager) {
-                                        this.initRemoteSyncManager();
-                                    }
-
-                                    localStorage.setItem('FT_lastSync', Date.now().toString());
-                                    this.saveSettings();
-                                    this.updateLastSyncTime();
-
-                                    // Auto-clear success message after 7 seconds
-                                    setTimeout(() => {
-                                        if (this.sheetConnectionStatus && this.sheetConnectionStatus.success) {
-                                            this.sheetConnectionStatus = {};
-                                        }
-                                    }, 7000);
-
+                                if (probeSucceeded && hasRemotePayload) {
+                                    updateLocalFromServer(data);
+                                    this.loadingStates.initialize = false;
+                                    completeInitialization('Connected to existing Google Sheet and pulled remote data.');
                                 } else {
-                                    // Handle error response from server
-                                    this.sheetConnectionStatus = {
-                                        success: false,
-                                        message: data.message || 'Initialization failed'
-                                    };
+                                    sendInitializeRequest();
                                 }
-                                // Catch JSON parsing errors and log them
                             } catch (e) {
-                                DEBUG && console.error('[FicTracker] Invalid JSON response during initialization:', response.responseText);
-
-                                this.sheetConnectionStatus = {
-                                    success: false,
-                                    message: 'Invalid response from server'
-                                };
+                                DEBUG && console.warn('[FicTracker] Pre-initialize sync probe was not usable, falling back to initialize:', e);
+                                sendInitializeRequest();
                             }
                         },
-                        // Handle connection errors like timeouts or offline state
                         onerror: (err) => {
-                            DEBUG && console.error('[FicTracker] Network error during initialization:', err);
-
-                            this.loadingStates.initialize = false;
-                            this.sheetConnectionStatus = {
-                                success: false,
-                                message: 'Network error - check your connection'
-                            };
+                            DEBUG && console.warn('[FicTracker] Pre-initialize sync probe failed, falling back to initialize:', err);
+                            sendInitializeRequest();
                         }
                     });
                 },
@@ -2991,6 +3319,7 @@
                     const importedStatuses = JSON.parse(importedData.FT_statusesConfig);
                     this.settings.statuses = importedStatuses;
                     localStorage.setItem('FT_settings', JSON.stringify(this.settings));
+                    localStorage.setItem('FT_statusesConfig', JSON.stringify(importedStatuses));
                 } catch (err) {
                     DEBUG && console.error('[FicTracker] Error importing status configuration:', err);
                 }
@@ -3156,6 +3485,7 @@
             if (savedSettings) {
                 try {
                     settings = JSON.parse(savedSettings);
+                    localStorage.setItem('FT_statusesConfig', JSON.stringify(settings.statuses || []));
                     DEBUG = settings.debug;
                     DEBUG && console.log(`[FicTracker] Settings loaded successfully:`, savedSettings);
                 } catch (error) {
