@@ -2,6 +2,12 @@
 
 All notable changes to this fork are documented here.
 
+## [1.6.6.4.2] - 2026-02-25
+- Fork changes:
+  - Fixed `FT_statusesConfig` changes (e.g. highlight color edits) not being pushed to Google Sheets sync
+    - `optimizeOperations` now correctly collapses stale `set` ops: a newer `set` for the same key always replaces an older one, regardless of value — previously two different `set` values for the same key would both remain in the queue
+    - `updateLocalStorage` no longer overwrites the local `FT_statusesConfig` with stale server data when there is an unpushed local change (detected via diff against `FT_lastSyncedStatusesConfig`); new custom statuses from the server config are still merged in, but local display settings (colors, borders, opacity) are preserved
+
 ## [1.6.6.4.1] - 2026-02-24
 - Upstream base: `1.6.6.4`
 - Fork changes:

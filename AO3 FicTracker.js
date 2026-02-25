@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AO3 FicTracker - BlackBatCat's Version
 // @author       infiniMotis, BlackBatCat
-// @version      1.6.6.4.1
+// @version      1.6.6.4.2
 // @namespace    https://github.com/Wolfbatcat/AO3-FicTracker
 // @description  Customized fork with chapter tracking, kudos button hiding, and Rose Piné-inspired theme. Tracks favorite, finished, to-read and disliked fanfics on AO3 with sync across devices.
 // @license      GNU GPLv3
@@ -498,13 +498,13 @@
 
     function getCurrentChapterNumber() {
         if (!isChapterPage()) return null;
-        
+
         const chapterPreface = document.querySelector('.chapter.preface.group h3.title a');
         if (!chapterPreface) return null;
-        
+
         const chapterText = chapterPreface.textContent.trim();
         const match = chapterText.match(/Chapter\s+(\d+)/i);
-        
+
         return match ? parseInt(match[1], 10) : null;
     }
 
@@ -739,10 +739,10 @@
         prependChapterMarker(existingText, chapterNum) {
             // Remove any existing "Last Read: Ch. X" marker (including trailing newlines)
             const cleanedText = existingText.replace(/^Last Read: Ch\.\s*\d+\s*\n*/m, '').trim();
-            
+
             // Prepend new marker with double line break
             const newMarker = `Last Read: Ch. ${chapterNum}`;
-            
+
             return cleanedText ? `${newMarker}\n\n${cleanedText}` : newMarker;
         }
 
@@ -1225,16 +1225,23 @@
             for (let i = operations.length - 1; i >= 0; i--) {
                 const existing = operations[i];
 
-                if (existing.key === key && existing.value === value) {
-                    // Same key-value pair
-                    if (existing.action !== action) {
-                        // Conflicting actions (add vs remove) - remove the existing one
+                if (existing.key === key) {
+                    if (action === 'set' && existing.action === 'set') {
+                        // A newer 'set' always supersedes an older 'set' for the same key,
+                        // regardless of value — remove the stale one so only the latest survives.
                         operations.splice(i, 1);
-                        DEBUG && console.log(`[FicTracker] Optimized conflicting operations for ${key}:${value}`);
-                    } else {
-                        // Same action - remove duplicate
-                        DEBUG && console.log(`[FicTracker] Removed duplicate operation for ${key}:${value}`);
-                        return false; // Don't add the new operation either
+                        DEBUG && console.log(`[FicTracker] Replaced stale 'set' operation for key "${key}" with updated value`);
+                    } else if (existing.value === value) {
+                        // Same key-value pair for add/remove operations
+                        if (existing.action !== action) {
+                            // Conflicting actions (add vs remove) - remove the existing one
+                            operations.splice(i, 1);
+                            DEBUG && console.log(`[FicTracker] Optimized conflicting operations for ${key}:${value}`);
+                        } else {
+                            // Same action - remove duplicate
+                            DEBUG && console.log(`[FicTracker] Removed duplicate operation for ${key}:${value}`);
+                            return false; // Don't add the new operation either
+                        }
                     }
                 }
             }
@@ -1409,8 +1416,27 @@
             let configApplied = false;
             if (Object.prototype.hasOwnProperty.call(safeServerData, this.STATUS_CONFIG_KEY)) {
                 const configValue = safeServerData[this.STATUS_CONFIG_KEY] || '';
-                this.storageManager.setItem(this.STATUS_CONFIG_KEY, configValue);
-                configApplied = this.applySyncedStatusesConfig(configValue);
+
+                // Only overwrite the local config with the server's version when there is no
+                // local change that hasn't been synced yet.  If the local config differs from
+                // the last successfully-synced config it means the user just made a change that
+                // hasn't reached the server — blindly overwriting it would silently discard that
+                // change and prevent it from ever being queued again.
+                const localConfig = this.storageManager.getItem(this.STATUS_CONFIG_KEY) || '';
+                const lastSyncedConfig = this.storageManager.getItem(this.LAST_SYNCED_STATUS_CONFIG_KEY) || '';
+                const hasUnpushedLocalChange = localConfig && localConfig !== lastSyncedConfig;
+
+                if (!hasUnpushedLocalChange) {
+                    this.storageManager.setItem(this.STATUS_CONFIG_KEY, configValue);
+                    configApplied = this.applySyncedStatusesConfig(configValue);
+                } else {
+                    DEBUG && console.log('[FicTracker] Skipping server config overwrite — local config has unpushed changes');
+                    // Still attempt to apply any new custom statuses from the server config
+                    // (e.g. added on another device) without losing local display settings.
+                    configApplied = this.applySyncedStatusesConfig(configValue);
+                    // But restore the local config so the unpushed styling changes survive.
+                    this.storageManager.setItem(this.STATUS_CONFIG_KEY, localConfig);
+                }
             }
 
             if (!configApplied) {
@@ -1677,16 +1703,16 @@
             // Add "Mark Chapter" button if enabled and on a chapter page
             if (settings.enableMarkAsReadButton && isChapterPage()) {
                 const markChapterButtonHtml = '<li class="mark-as-read" id="mark-chapter-read"><a href="#">📖 Mark Chapter</a></li>';
-                
+
                 actionsMenu.insertAdjacentHTML('beforeend', markChapterButtonHtml);
-                
+
                 if (settings.displayBottomActionButtons) {
                     bottomActionsMenu.insertAdjacentHTML('beforeend', markChapterButtonHtml);
                 }
             }
 
             this.setupClickListeners();
-            
+
             // Initialize kudos tracking
             const kudosManager = new KudosManager(this.storageManager, this.remoteSyncManager);
             kudosManager.init();
@@ -1774,44 +1800,44 @@
             const workId = this.bookmarkData.workId;
             const existingNote = this.userNotesManager.getNote(workId);
             const existingText = existingNote?.text || '';
-            
+
             DEBUG && console.log('[FicTracker] Mark as Read - Before:', existingText);
-            
+
             // Prepend chapter marker
             const updatedText = this.userNotesManager.prependChapterMarker(existingText, chapterNum);
-            
+
             DEBUG && console.log('[FicTracker] Mark as Read - After:', updatedText);
-            
+
             // Save note
             const ficDetails = this.userNotesManager.getFicDetails(workId, true);
             this.userNotesManager.saveNote(workId, updatedText, ficDetails);
-            
+
             DEBUG && console.log('[FicTracker] Mark as Read - Saved to storage');
-            
+
             // Verify save
             const savedNote = this.userNotesManager.getNote(workId);
             DEBUG && console.log('[FicTracker] Mark as Read - Verified:', savedNote?.text);
-            
+
             // Update or create note display if displayUserNotes is enabled
             if (settings.displayUserNotes) {
                 const ficWrapperContainer = document.querySelector('#main div.wrapper');
                 const containerForNotes = ficWrapperContainer?.parentElement;
-                
+
                 if (containerForNotes) {
                     const noteBlock = containerForNotes.querySelector(`.user-note-preview[data-work-id="${workId}"]`);
-                    
+
                     if (noteBlock) {
                         // Update existing note display
                         this.userNotesManager.updateNoteDisplay(noteBlock, workId, true);
                     } else {
                         // Check if this is the first note being added (no handlers set up yet)
                         const hasExistingNotes = containerForNotes.querySelector('.user-note-preview') !== null;
-                        
+
                         // Create note display
                         ficWrapperContainer.insertAdjacentHTML('afterend',
                             this.userNotesManager.generateNoteHtml(workId, true)
                         );
-                        
+
                         // Only setup handlers if this is the first note (handlers not already set up)
                         if (!hasExistingNotes) {
                             this.userNotesManager.setupNoteHandlers(containerForNotes, true);
@@ -1819,7 +1845,7 @@
                     }
                 }
             }
-            
+
             // Visual feedback
             const buttons = document.querySelectorAll('#mark-chapter-read a');
             buttons.forEach((btn) => {
@@ -3668,12 +3694,12 @@
                 if (e.key === settings.kudosStorageKey) {
                     const kudosButton = document.getElementById('kudo_submit');
                     const workIdInput = document.getElementById('kudo_commentable_id');
-                    
+
                     // If we're on a work page with a kudos button
                     if (kudosButton && workIdInput) {
                         const workId = workIdInput.value;
                         const kudosGiven = e.newValue ? e.newValue.split(',').filter(id => id) : [];
-                        
+
                         // Hide button if kudos was given in another tab
                         if (kudosGiven.includes(workId)) {
                             kudosButton.style.display = 'none';
