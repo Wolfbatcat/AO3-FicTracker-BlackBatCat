@@ -1,61 +1,54 @@
-# AO3 FicTracker
+# AO3 FicTracker - BlackBatCat's Version
 
-This is a customized fork of [infiniMotis's AO3 FicTracker](https://github.com/infiniMotis/AO3-FicTracker) with my personalized modifications.
+Track, tag and highlight fics on AO3, with personal notes and sync across devices. This is a fork of [infiniMotis's AO3 FicTracker](https://github.com/infiniMotis/AO3-FicTracker) with my own changes and new features.
 
-> **Note:** This version does not auto-update from Greasy Fork. To use the official version with auto-updates, install from the [original repository](https://greasyfork.org/en/scripts/513435-ao3-fictracker).
+## ✨ What FicTracker Does
 
-## Changes from Original
+- **Mark fics with a status** (Reading, Subscribed, To Read, Dropped, Finished Reading), or create your own tags.
+- **Change a status from anywhere** – buttons on the work page, or the **Change Status** menu on search results and listings.
+- **Spot tracked fics at a glance** – they're highlighted, dimmed, collapsed or hidden, however you set them up.
+- **Write personal notes** on any fic.
+- **Jump to your lists** from links in your AO3 user menu.
+- **Keep your data safe** – statuses are saved as AO3 bookmarks, and optional Google Sheets sync keeps highlighting and notes in step across devices.
 
-This custom version includes the following modifications from the [original AO3 FicTracker](https://github.com/infiniMotis/AO3-FicTracker):
+## 📥 Installation
 
-> **Important🚨**: For status highlighting and collapse/hide behavior to work correctly, update statuses using FicTracker controls only (the **Change Status** menu and FicTracker work-page buttons). Changes made through AO3 **Edit Bookmark** are not tracked by FicTracker storage.
+1. Install a userscript manager such as [Tampermonkey](https://www.tampermonkey.net/).
+2. Create a new script in your userscript manager and paste in the contents of [`ao3-fictracker-bbc.js`](ao3-fictracker-bbc.js). A script installed this way doesn't update automatically.
 
-### 📚 Renamed Status Categories
-Status categories have been renamed and reordered to match my workflow:
-- **"Favorite"** → **"Reading"** 
-  - Label: "My Current Fanfics"
-  - Color: Rose pink (`#eb6f92`)
-- **New: "Subscribed"** status added
-  - Label: "My Subscribed Fics"  
-  - Color: Coral (`#ea9a97`)
-- **"Disliked Work"** → **"Dropped"**
-  - Hidden from view by default
-  - No longer shown in dropdown menu
-- **"Finished Reading"** 
-  - Moved to end of list
+> Running the original FicTracker as well? Turn it off first – running both at once will double up buttons and menus.
 
-### 🎨 Visual Theme
-- Custom color scheme inspired by Rose Pine theme
-- Border radius changed from `8px` to `0.75em` to match [site skin](https://archiveofourown.org/works/69993411)
+## 📋 Getting Started
 
-### 📖 Chapter Tracking Feature
-New feature to help track reading progress in multi-chapter works:
-- **"Mark Chapter" button** appears on chapter pages
-- Automatically prepends `Last Read: Ch. X` to your custom note for that fic
-- Updates the chapter number each time you click it
+All settings are at the bottom of your Preferences page (`User -> My Preferences`).
 
-### ⭐ Kudos Button Hiding (Cloud Sync)
-New feature: When you give kudos to a work, AO3 FicTracker will automatically hide the kudos button on all chapters and work pages for that fic.
-- This status is tracked and synced across all devices using the Google Sheets Cloud Storage integration.
-- Replaces my [No Re-Kudos script](https://greasyfork.org/en/scripts/551623-ao3-no-re-kudos) so feel free to disable it!
+To sync across devices, follow the **Google Sheets Setup Guide** on the [original FicTracker page](https://greasyfork.org/en/scripts/513435-ao3-fictracker). The Apps Script it uses is also in [`cloud-storage/`](cloud-storage/).
 
-### 📚 Series Bookmark Support
-Change Status works on series, not just individual works:
-- Status buttons are injected directly into the series page nav
-- Series bookmarks automatically receive a `Series` bookmark tag so you can find them easily
+> **🚨 Important:** Change statuses with FicTracker's buttons and menu only. Changes made through AO3's **Edit Bookmark** form aren't picked up, so highlighting and hiding won't match.
 
-### 🔄 Cloud Sync Enhancements
-- Google Sheets sync now also includes status configuration (`FT_statusesConfig`), including custom tags and visual settings (highlight color, border size, and border opacity) across devices.
+## 🔄 Changes from the Original
 
-### ⚙️ Changed Default Settings
-Different defaults matching my own preferences:
-- **My Notes Button**: Disabled by default; can be re-enabled in Preferences
-- **On-Page Sorting**: Disabled by default; can be re-enabled in Preferences
-- **Hide Default Subscribe Button**: New setting, enabled by default. Only hides subscribe button on work pages.
+- **📖 Chapter tracking** – A **Mark Chapter** button on chapter pages saves `Last Read: Ch. X` to the top of your note for that fic.
+- **🔔 Better Subscribe and Mark for Later buttons** – Marking a work as **Subscribed** bookmarks it _and_ subscribes you to it; removing the tag unsubscribes you. Mark for Later can work the same way (needs AO3 reading history turned on). Choose the tags under **Buttons & Menus**.
+- **⭐ Kudos button hiding** – Once you leave kudos, the kudos button disappears on every chapter of that work, on all your devices. Picks up your history from my [No Re-Kudos script](https://greasyfork.org/en/scripts/551623-ao3-no-re-kudos) automatically.
+- **📚 Series support** – Change a series' status from the series page or your bookmarks. Series bookmarks get a `Series` tag so they're easy to find.
+- **🏷️ Renamed statuses** – Favorite is now **Reading**, Disliked is now **Dropped** (hidden by default), a new **Subscribed** status is added, and Finished Reading moves to the end.
+- **🔄 More reliable sync** – Custom tags and their colors sync across devices, **Sync Now** tells you when a sync fails, and backups now include your kudos history.
+- **🎨 Matches your site skin** – The Change Status menu and note boxes blend into whatever skin you use, with a Rosé Pine–inspired default color scheme.
+- **🗂️ Sorted user menu links** – Choose whether each list opens sorted by date bookmarked, date updated or word count.
+- **⚙️ Different defaults** – AO3's Subscribe and Mark for Later buttons are hidden, and the My Notes button and on-page sorting start off. All can be changed in Preferences.
+- **🛠️ Tidier settings page** – Settings are grouped into collapsible sections. Click the section heading to collapse/expand.
 
-### 🐛 Bug Fixes
-- See [CHANGELOG](../CHANGELOG.md) for the bug fix list.
+## 📜 Changelog
 
+This fork rebases onto upstream releases as they ship, plus its own fixes in between. See the [CHANGELOG](CHANGELOG.md) for the full version history.
 
+## 🐛 Issues
 
+Found a bug in this version? [Open an issue here](https://github.com/Wolfbatcat/AO3-FicTracker/issues) rather than on the original repository.
 
+## 🙌 Credits
+
+My heartiest thanks to farin for the life-changing FicTracker script. [Send them a tip](https://ko-fi.com/infinimotis)!
+
+Licensed under the GNU GPLv3, the same as the original.
