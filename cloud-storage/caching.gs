@@ -9,8 +9,13 @@ function getCachedData(key) {
 
 // Stores JSON-stringified value in the Apps Script cache under the given key,
 // with an optional expiration duration (default: CACHE_DURATION seconds).
+// Skips caching if the value exceeds the 100KB per-key limit, so large datasets still sync.
 function setCachedData(key, value, duration = CACHE_DURATION) {
-  cache.put(key, JSON.stringify(value), duration);
+  try {
+    cache.put(key, JSON.stringify(value), duration);
+  } catch (e) {
+    console.log(`[FicTracker] Skipped caching "${key}": ${e.message}`);
+  }
 }
 
 // Removes a specific key (default: 'sheet_data') from the Apps Script cache,

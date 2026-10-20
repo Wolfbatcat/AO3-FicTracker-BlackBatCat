@@ -2,10 +2,15 @@
 
 All notable changes to this fork are documented here.
 
+## Backend Update (2026-10-20)
+
+- **Fixed "Sync failed: Argument too large: value"** — syncing no longer fails for large libraries; when your data is too big for Google's temporary cache, it is skipped and read straight from the sheet instead
+- **Action required:** Paste the updated `caching.gs` into your sheet's script editor and redeploy (Deploy → Manage deployments → Edit → New version) to get this fix
+
 ## [1.6.7.10.1] - 2026-10-15
 
 - **Improved AO3's Subscribe and Mark for Later buttons** — pick a tag for each under Additional Settings (e.g. "Subscribed", "To Read") and marking a work with it also subscribes you or adds it to Marked for Later on AO3; removing the tag undoes it. Off by default
-- **New: Sort bookmark shortcuts** (Date Bookmarked, Date Updated or Word Count), under Tag And Labels Settings
+- **New: Sortable bookmark shortcuts** (Date Bookmarked, Date Updated or Word Count), under Tag And Labels Settings
 - **Merged upstream fixes through 1.6.7.10**, including a customizable loading label in settings
 - **Failed status changes now undo themselves** — if AO3 rejects a new bookmark, the status, highlight and Google Sheets sync are rolled back instead of showing a status that doesn't exist (works and series)
 - **Prefilled bookmark notes stay under AO3's 5000-character limit** by trimming tags first, then the summary; works in multiple series now list all of them
