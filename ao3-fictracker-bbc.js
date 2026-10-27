@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AO3 FicTracker - BlackBatCat's Version
 // @author       infiniMotis, BlackBatCat
-// @version      1.6.7.10.1
+// @version      1.6.7.10.2
 // @namespace    https://github.com/Wolfbatcat/AO3-FicTracker
 // @description  Customized fork with chapter tracking, kudos button hiding, and Rose Piné-inspired theme. Tracks favorite, finished, to-read and disliked fanfics on AO3 with sync across devices.
 // @license      GNU GPLv3
@@ -5621,7 +5621,7 @@
                 [
                     /\/works\/.*(?:chapters|view_full_work)/,
                     /works\/\d+(#\w+-?\w*)?(\?.*)?$/,
-                    /\/chapters\/\d+\?show_comments/,
+                    /\/chapters\/\d+/,
                 ],
                 () => {
                     const bookmarkManager = new BookmarkManager("https://archiveofourown.org/");

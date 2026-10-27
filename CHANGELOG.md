@@ -7,6 +7,10 @@ All notable changes to this fork are documented here.
 - **Fixed "Sync failed: Argument too large: value"** — syncing no longer fails for large libraries; when your data is too big for Google's temporary cache, it is skipped and read straight from the sheet instead
 - **Action required:** Paste the updated `caching.gs` into your sheet's script editor and redeploy (Deploy → Manage deployments → Edit → New version) to get this fix
 
+## [1.6.7.10.2] - 2026-10-27
+
+- **Fixed status buttons missing on some chapter pages** — links like `/chapters/123?page=5&show_comments=true` now load the tag buttons, notes and Mark Chapter button
+
 ## [1.6.7.10.1] - 2026-10-15
 
 - **Improved AO3's Subscribe and Mark for Later buttons** — pick a tag for each under Additional Settings (e.g. "Subscribed", "To Read") and marking a work with it also subscribes you or adds it to Marked for Later on AO3; removing the tag undoes it. Off by default
